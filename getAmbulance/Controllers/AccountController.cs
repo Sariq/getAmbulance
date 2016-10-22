@@ -3,11 +3,15 @@ using getAmbulance.Models;
 using Microsoft.AspNet.Identity;
 using Microsoft.AspNet.Identity.Owin;
 using Microsoft.Owin.Security;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Http;
@@ -18,8 +22,11 @@ namespace getAmbulance.Controllers
     [Authorize]
     public class AccountController : ApiController
     {
+        private ApplicationIdentityContext _ctx;
+
         public AccountController()
         {
+            _ctx = ApplicationIdentityContext.Create();
         }
 
         public AccountController(ApplicationUserManager userManager)
@@ -59,12 +66,17 @@ namespace getAmbulance.Controllers
         [HttpPost]
         [AllowAnonymous]
 
-        public async Task<RegisterViewModel> Register(RegisterViewModel model)
+        public async Task<HttpResponseMessage> Register(RegisterViewModel model)
         {
+            HttpResponseMessage response;
+           
             if (ModelState.IsValid)
             {
                 var user = new ApplicationUser { UserName = model.Email, Email = model.Email };
+                user.AddClaim(new Claim("WhiteLabelId", "1"));
                 var result = await UserManager.CreateAsync(user, model.Password);
+            
+                //.Claims.Add(new IdentityUserClaim(new Claim("WhiteLabelId","1")));
                 if (result.Succeeded)
                 {
                     var code = await UserManager.GenerateEmailConfirmationTokenAsync(user.Id);
@@ -73,13 +85,14 @@ namespace getAmbulance.Controllers
 
                     await UserManager.SendEmailAsync(user.Id, "Confirm your account", "Please confirm your account by clicking this link: <a href=\"" + callbackUrl + "\">link</a>");
                     // ViewBag.Link = callbackUrl;
-                    //  return View("DisplayEmail");
+                    response = Request.CreateResponse(HttpStatusCode.OK, ModelState);
+                    return response;
                 }
-                //    AddErrors(result);
+                    AddErrors(result);
             }
-
+            response = Request.CreateErrorResponse(HttpStatusCode.BadRequest, ModelState);
             // If we got this far, something failed, redisplay form
-            return (model);
+            return (response);
         }
         //
         // GET: /Account/ConfirmEmail
@@ -98,6 +111,22 @@ namespace getAmbulance.Controllers
             }
           //  AddErrors(result);
           //  return View();
+        }
+        //
+        // Post: /Account/GetUserProfile
+        [HttpPost]
+        [AllowAnonymous]
+        public List<IdentityUserClaim> GetUserProfile(JObject jsonData)
+        {
+            dynamic jsonObj = jsonData;
+           // var currentPlace = jsonObj.currentPlace.Value;
+            //temp_applicationUser.Claims
+            var builder = Builders<ApplicationUser>.Filter;
+            var filter = builder.Eq("UserName", (string)jsonObj.userName.Value);
+            var temp_userData = _ctx.Users.Find(filter).ToListAsync().Result[0];
+           // BsonDocument userData =temp_userData.Claims;
+            List<IdentityUserClaim> userData = temp_userData.Claims;
+            return userData;
         }
 
         #region Helpers
